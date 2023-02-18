@@ -6,7 +6,7 @@
 Instead I am building it as a material generation tool.
 
 ## About
-This tool was created so users can easily generate an MDL material based off of text to image prompting.
+This tool was created so users can easily generate an MDL material based off of text to image prompting. Since it can be used to make seamless MDL I decided to call it `SeaMDLess`.
 
 ## Adding This Extension
 To add this extension to your Omniverse app:

@@ -13,7 +13,7 @@ description="A tool to generate Seamless MDL materials use text-to-image prompts
 readme  = "docs/README.md"
 
 # URL of the extension source repository.
-repository = ""
+repository = "https://github.com/ericcraft-mh/meadhunt-utility-seamdless"
 
 # One of categories for UI.
 category = "Other"
