@@ -3,10 +3,13 @@ _*/
 
 .DS_Store
 **/.vscode/ipch
+api.json
+*.afphoto
+img_cache
+app
+openai
 
+temp.txt
 # byte-compiled python files
 *.py[cod]
-
 /.vs
-
-/app

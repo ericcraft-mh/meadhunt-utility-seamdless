@@ -40,6 +40,10 @@ icon = "data/icon.png"
 [[python.module]]
 name = "meadhunt.utility.seamdless"
 
+[python.pipapi]
+requirements = ["openai"]
+use_online_index = true
+
 [[test]]
 # Extra dependencies only to be used during test run
 dependencies = [

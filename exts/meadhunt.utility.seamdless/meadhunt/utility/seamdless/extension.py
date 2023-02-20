@@ -1,43 +1,60 @@
+__all__ = ["SeaMDLess"]
 import omni.ext
 import omni.ui as ui
-
-
-# Functions and vars are available to other extension as usual in python: `example.python_ext.some_public_function(x)`
-def some_public_function(x: int):
-    print("[meadhunt.utility.seamdless] some_public_function was called with x: ", x)
-    return x ** x
-
+import omni.kit.ui
+import omni.kit.app
+from .window import ExtensionWindow
 
 # Any class derived from `omni.ext.IExt` in top level module (defined in `python.modules` of `extension.toml`) will be
 # instantiated when extension gets enabled and `on_startup(ext_id)` will be called. Later when extension gets disabled
 # on_shutdown() is called.
-class MeadhuntUtilitySeamdlessExtension(omni.ext.IExt):
+class SeaMDLess(omni.ext.IExt):
     # ext_id is current extension id. It can be used with extension manager to query additional information, like where
     # this extension is located on filesystem.
+
+    WINDOW_TITLE = "SeaMDLess"
+    WINDOW_SIZE = [936,588]
     def on_startup(self, ext_id):
         print("[meadhunt.utility.seamdless] meadhunt utility seamdless startup")
 
-        self._count = 0
-
-        self._window = ui.Window("My Window", width=300, height=300)
-        with self._window.frame:
-            with ui.VStack():
-                label = ui.Label("")
-
-
-                def on_click():
-                    self._count += 1
-                    label.text = f"count: {self._count}"
-
-                def on_reset():
-                    self._count = 0
-                    label.text = "empty"
-
-                on_reset()
-
-                with ui.HStack():
-                    ui.Button("Add", clicked_fn=on_click)
-                    ui.Button("Reset", clicked_fn=on_reset)
+        self._ext_id = ext_id
+        self._menu_path = f"Window/Mead & Hunt/{self.WINDOW_TITLE}"
+        self._window = None
+        self._menu = omni.kit.ui.get_editor_menu().add_item(self._menu_path, self._on_menu_click, True)
+        omni.kit.ui.get_editor_menu().set_value(self._menu_path, False)
 
     def on_shutdown(self):
         print("[meadhunt.utility.seamdless] meadhunt utility seamdless shutdown")
+
+        if self._window:
+            self._window.hide()
+            self._window.destroy()
+            self._window = None
+        omni.kit.ui.get_editor_menu().remove_item(self._menu)
+
+    def _get_package_info(self, keyvalue:str = None):
+        """Handles getting version info from the extension.toml"""
+        _data = omni.kit.app.get_app().get_extension_manager().get_extension_dict(self._ext_id)
+        if keyvalue is None:
+            return ""
+        else:
+            return _data[f"package/{keyvalue}"]
+
+    def _on_menu_click(self, menu, toggled):
+        """Handles showing and hiding the window from the 'Windows' menu."""
+        if toggled:
+            if self._window is None:
+                _version = self._get_package_info("version")
+                self._window = ExtensionWindow(f"{self.WINDOW_TITLE} v{_version}", self.WINDOW_SIZE[0], self.WINDOW_SIZE[1], menu, self._ext_id)
+            else:
+                self._window.show()
+        else:
+            if self._window:
+                self._window.hide()
+                self._window.destroy()
+                self._window = None
+
+    def destroy(self):
+        if self._window:
+            self._window.hide()
+            self._window = None
