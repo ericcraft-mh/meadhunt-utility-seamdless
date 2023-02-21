@@ -20,25 +20,25 @@ class api():
     def _get_api_key(self,_ignore:bool=False) -> str:
         _file = ""
         _return_val = ""
-        _json = f"{self.ROOT_PATH}/config/api.json"
+        _json = f'{self.ROOT_PATH}/config/api.json'
         if os.path.exists(_json):
-            _file = open(_json,"rt")
+            _file = open(_json,'rt')
             _data = json.load(_file)
             if 'openai' in _data:
                 _return_val = _data['openai']
             else:
-                if not _ignore: carb.log_warn("WARNING: api.json is Missing Data")
+                if not _ignore: carb.log_warn('WARNING: api.json is Missing Data')
         else:
-            if not _ignore: carb.log_warn("WARNING: api.json is Missing")
+            if not _ignore: carb.log_warn('WARNING: api.json is Missing')
         _data = None
         if _file != "":
             _file.close()
         return _return_val
     
-    def _set_json(self,_json:str="",_key:str="",_value:str=""):
+    def _set_json(self,_file:str="",_key:str="",_value:str=""):
         _dict = {_key:_value}
         _jsonString = json.dumps(_dict,indent=4)
-        _jsonFile = open(_json,"w")
+        _jsonFile = open(_file,'w')
         _jsonFile.write(_jsonString)
         _jsonFile.close()
 
@@ -46,7 +46,7 @@ class api():
         _return_val = ""
         _file = ""
         if os.path.exists(_json):
-            _file = open(_json,"rt")
+            _file = open(_json,'rt')
             _data = json.load(_file)
             if _key in _data:
                 _return_val = _data[_key]
@@ -60,7 +60,7 @@ class api():
     def _register_openai(self):
         openai.api_key = self._get_api_key()
     
-    def _img_create(self,_prompt:str="",_n:int=1,_size:str="1024x1024")->dict:
+    def _img_create(self,_prompt:str="",_n:int=1,_size:str='1024x1024')->dict:
         _response = openai.Image.create(
             api_key=self._register_openai(),
             prompt=_prompt,
@@ -73,23 +73,30 @@ class api():
         _url_path = urlparse(_response['data'][_int]['url']).path
         return os.path.basename(_url_path)
 
-    def _img_output(self,_url_dict:dict={},_img_cache:str=""):
+    def _img_output(self,_url_dict:dict={},_img_cache:str="")->str:
         if _url_dict != {}:
             if _img_cache == "":
-                _img_cache = f"{self.ROOT_PATH}/resources"
+                _img_cache = f'{self.ROOT_PATH}/resources'
             _target_folder = _url_dict['created']
-            _target_dir = f"{_img_cache}/{_target_folder}"
+            _target_dir = f'{_img_cache}/{_target_folder}'
             if not os.path.exists(_target_dir):
                 os.mkdir(_target_dir)
+            
             for i in range(0,len(_url_dict['data'])):
+                _url = _url_dict['data'][i]['url']
+                _response = requests.get(_url, stream = True)
                 # with requests.get(_url_dict['data'][i]['url'],stream=True) as response:
-                #     _target_file = f"{_target_dir}/{self._img_name(_url_dict,i)}"
+                #     _target_file = f'{_target_dir}/{self._img_name(_url_dict,i)}'
                 #     if response.status_code == 200:
                 #         with open(_target_file,'wb') as f:
                 #             shutil.copyfileobj(response.raw, f)
                 #         print('Image sucessfully Downloaded: ',_target_file)
                 #     else:
                 #         print('Image Couldn\'t be retrieved')
-
-                _target_file = f"{_target_dir}/{self._img_name(_url_dict,i)}"
-                urlretrieve(_url_dict['data'][i]['url'],_target_file)
+                if _response.status_code == 200:
+                    _target_file = f'{_target_dir}/{self._img_name(_url_dict,i)}'
+                    urlretrieve(_url,_target_file)
+                    print(f'Image sucessfully Downloaded: {_target_file}\n{_url}')
+                else:
+                    print('Image Couldn\'t be retrieved')
+            return _target_dir
