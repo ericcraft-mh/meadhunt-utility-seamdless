@@ -110,6 +110,7 @@ class ExtensionWindow(ui.Window):
                     self._sld_image.model.add_value_changed_fn(lambda a:self._fn_image_preview(a.as_int))
                     # self._sld_count.model.set_value(2)
                     # ui.Spacer(height=6)
+                    self._lbl_image_prompt = ui.Label("Image Prompt:\n")
                     
                 with ui.VStack(height=0,width=388,style={'margin':3}):
                     self._cf_api_key = ui.CollapsableFrame('API & Key')
@@ -138,14 +139,15 @@ class ExtensionWindow(ui.Window):
                             self._btn_request = ui.Button('Request AI Image',clicked_fn=lambda:(self._fn_img_request()))
                     self._cf_settings = ui.CollapsableFrame('AI Settings',collapsed=False)
                     with self._cf_settings:
-                        with ui.VStack(height=0):
+                        with ui.VStack(height=0, width=388):
                             with ui.HStack(style={'Button':{'margin':-5.0},'Label':{'margin':5}}):
                                 ui.Label('Image Cache')
                                 self._fld_img_cache = ui.StringField(height=self.BUTTON_SIZE,width=260)
                                 ui.Button(image_url='resources/icons/folder.png', width=self.BUTTON_SIZE, height=self.BUTTON_SIZE, clicked_fn=lambda:self._on_path_change_clicked(False))
-                            ui.Button('Load Generated Image Folder', width=388, height=self.BUTTON_SIZE, clicked_fn=lambda:self._on_path_change_clicked(True))
-                            ui.Button('Delete Generated Images', width=388, height=self.BUTTON_SIZE, clicked_fn=lambda:self._on_path_change_clicked(True))
-                            ui.Button('Delete Generated Image Folders', width=388, height=self.BUTTON_SIZE, clicked_fn=lambda:self._on_path_change_clicked(True))
+                            ui.Button('Load Generated Image Folder', height=self.BUTTON_SIZE, clicked_fn=lambda:self._on_path_change_clicked(True))
+                            ui.Button('Load Prompt from Image Prompt', height=self.BUTTON_SIZE, clicked_fn=lambda:self._fld_prompt.model.set_value(self._fn_folder_prompt()[0]))
+                            ui.Button('Delete Generated Images', height=self.BUTTON_SIZE, clicked_fn=lambda:self._on_path_change_clicked(True), enabled=False)
+                            ui.Button('Delete Generated Image Folders', height=self.BUTTON_SIZE, clicked_fn=lambda:self._on_path_change_clicked(True), enabled=False)
                     with ui.CollapsableFrame('Statistics',alignment=ui.Alignment.BOTTOM):
                         self._lbl_process_time:ui.Label = ui.Label('Processing Time',style=_style_lbl)
 
@@ -156,6 +158,19 @@ class ExtensionWindow(ui.Window):
             _img_cnt = 1
         self._fn_set_sld_image(_img_cnt)
         self._fn_image_preview(1)
+        _prompt,_json_file = self._fn_folder_prompt()
+        if os.path.exists(_json_file):
+            _prompt_msg = f'Image Prompt:\n{_prompt}'
+        else:
+            _prompt_msg = 'Image Prompt:\nPrompt not found.'
+        self._lbl_image_prompt.text = _prompt_msg
+
+    def _fn_folder_prompt(self):
+        _split = os.path.dirname(self.CURRENT_DIR).split('/')
+        _target = _split[len(_split)-1]
+        _json_file = f'{self.CURRENT_DIR}{_target}.json'
+        _prompt = self._dalle_api._get_json(f'{_json_file}','prompt')
+        return [_prompt,_json_file]
 
     def _fn_image_preview(self,_val:int=1):
         _img_path = f'{self.CURRENT_DIR}/{self._img_list[_val-1]}'
@@ -217,11 +232,10 @@ class ExtensionWindow(ui.Window):
     
     def _fn_img_request(self):
         _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
-        # print(f'ComboBox: {self.SIZE_LIST[_cbx_item]}')
         startTime = time.time()
         _img_response = self._dalle_api._img_create(self._fld_prompt.model.as_string,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
         _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
-        self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',self._fld_prompt.model.as_string)
+        self._dalle_api._set_json(f'{_target_dir}{_img_response["created"]}.json','prompt',self._fld_prompt.model.as_string)
         endTime = time.time()
         self._lbl_process_time.text = self._fn_process_time(startTime,endTime)
         self.CURRENT_DIR = _target_dir

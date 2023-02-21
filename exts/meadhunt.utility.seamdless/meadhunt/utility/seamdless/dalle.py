@@ -78,23 +78,15 @@ class api():
             if _img_cache == "":
                 _img_cache = f'{self.ROOT_PATH}/resources'
             _target_folder = _url_dict['created']
-            _target_dir = f'{_img_cache}/{_target_folder}'
+            _target_dir = f'{_img_cache}{_target_folder}/'
             if not os.path.exists(_target_dir):
                 os.mkdir(_target_dir)
-            
             for i in range(0,len(_url_dict['data'])):
                 _url = _url_dict['data'][i]['url']
                 _response = requests.get(_url, stream = True)
-                # with requests.get(_url_dict['data'][i]['url'],stream=True) as response:
-                #     _target_file = f'{_target_dir}/{self._img_name(_url_dict,i)}'
-                #     if response.status_code == 200:
-                #         with open(_target_file,'wb') as f:
-                #             shutil.copyfileobj(response.raw, f)
-                #         print('Image sucessfully Downloaded: ',_target_file)
-                #     else:
-                #         print('Image Couldn\'t be retrieved')
+
                 if _response.status_code == 200:
-                    _target_file = f'{_target_dir}/{self._img_name(_url_dict,i)}'
+                    _target_file = f'{_target_dir}{self._img_name(_url_dict,i)}'
                     urlretrieve(_url,_target_file)
                     print(f'Image sucessfully Downloaded: {_target_file}\n{_url}')
                 else:
