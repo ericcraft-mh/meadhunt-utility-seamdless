@@ -4,11 +4,13 @@ _*/
 .DS_Store
 **/.vscode/ipch
 api.json
+seamdless.json
 *.afphoto
-img_cache
+
 app
 openai
-
+*ImagePlaceholder*
+!ImagePlaceholder_040.png
 temp.txt
 # byte-compiled python files
 *.py[cod]

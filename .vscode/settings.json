@@ -449,6 +449,7 @@
         "${workspaceFolder}/app/kit/exts/omni.videoencoding",
         "${workspaceFolder}/app/kit/exts/omni.volume",
         "${workspaceFolder}/app/kit/exts/usdrt.gf.tests",
+        "${workspaceFolder}/openai",
     ],
 
     // Python & Pylance Setup

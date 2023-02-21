@@ -13,7 +13,7 @@ class SeaMDLess(omni.ext.IExt):
     # this extension is located on filesystem.
 
     WINDOW_TITLE = "SeaMDLess"
-    WINDOW_SIZE = [936,588]
+    WINDOW_SIZE = [936,800]
     def on_startup(self, ext_id):
         print("[meadhunt.utility.seamdless] meadhunt utility seamdless startup")
 
