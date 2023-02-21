@@ -6,6 +6,7 @@ _*/
 api.json
 seamdless.json
 *.afphoto
+**/img_cache
 
 app
 openai

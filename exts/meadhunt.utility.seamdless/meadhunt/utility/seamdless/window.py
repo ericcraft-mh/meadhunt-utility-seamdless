@@ -36,6 +36,10 @@ class ExtensionWindow(ui.Window):
         self._image.source_url = f"{self._path_img_cache}/{self._img_list[0]}"
         self._fn_image_count(len(self._img_list))
 
+        temp = self._dalle_api._img_create("top down photo of red bricks, zoom out, create seamless tileable background for a webpage, texture pack",10)
+        
+        self._dalle_api._img_output(temp,self._path_img_cache)
+
     def on_shutdown(self):
         if self:
             self.hide()
