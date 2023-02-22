@@ -9,6 +9,7 @@ from omni.kit.window.filepicker.dialog import FilePickerDialog
 from omni.kit.window.filepicker import FilePickerDialog
 from omni.kit.widget.filebrowser import FileBrowserItem
 from .dalle import api
+from PIL import Image, ImageChops
 
 class ExtensionWindow(ui.Window):
     
@@ -103,14 +104,15 @@ class ExtensionWindow(ui.Window):
         # self._cf_api_key = ui.CollapsableFrame('API & Key')
         with self.frame:
             with ui.HStack():
-                with ui.VStack(height=0,style={'margin':3}):
-                    self._image = ui.Image(f'{self._dalle_api.ROOT_PATH}/resources/ImagePlaceholder.png', height=512, width=512, fill_policy=ui.FillPolicy.PRESERVE_ASPECT_FIT, style={'border_radius':5})
+                with ui.VStack(height=0,style={'margin':3},width=512):
+                    self._image = ui.Image(f'{self._dalle_api.ROOT_PATH}/resources/ImagePlaceholder.png', height=512, fill_policy=ui.FillPolicy.PRESERVE_ASPECT_FIT, style={'border_radius':5})
                     # ui.Spacer(height=6)
-                    self._sld_image = ui.IntSlider(self.MLD_IMAGE,min=1,max=10,width=512)
+                    self._sld_image = ui.IntSlider(self.MLD_IMAGE,min=1,max=10)
                     self._sld_image.model.add_value_changed_fn(lambda a:self._fn_image_preview(a.as_int))
                     # self._sld_count.model.set_value(2)
                     # ui.Spacer(height=6)
-                    self._lbl_image_prompt = ui.Label("Image Prompt:\n")
+                    self._lbl_image_prompt = ui.Label("Image Prompt:\n",word_wrap=True)
+                    self._btn_seams = ui.Button('Check Seams', height=24, width=ui.Percent(50),clicked_fn=lambda:self._fn_visualize_seams())
                     
                 with ui.VStack(height=0,width=388,style={'margin':3}):
                     self._cf_api_key = ui.CollapsableFrame('API & Key')
@@ -159,10 +161,11 @@ class ExtensionWindow(ui.Window):
         self._fn_set_sld_image(_img_cnt)
         self._fn_image_preview(1)
         _prompt,_json_file = self._fn_folder_prompt()
+        _prompt_prefix = os.path.basename(os.path.dirname(self.CURRENT_DIR))
         if os.path.exists(_json_file):
-            _prompt_msg = f'Image Prompt:\n{_prompt}'
+            _prompt_msg = f'{_prompt_prefix}\n{_prompt}'
         else:
-            _prompt_msg = 'Image Prompt:\nPrompt not found.'
+            _prompt_msg = f'{_prompt_prefix}\nPrompt not found.'
         self._lbl_image_prompt.text = _prompt_msg
 
     def _fn_folder_prompt(self):
@@ -177,7 +180,56 @@ class ExtensionWindow(ui.Window):
         if not os.path.exists(_img_path):
             _img_path = f'{self._dalle_api.ROOT_PATH}/resources/ImagePlaceholder_040.png'
         self._image.source_url = _img_path
+   
+    def _fn_dir_list(self, _dirname:str="")->list:
+        if os.path.exists(_dirname):
+            _imgs = [_img for _img in os.listdir(_dirname) if _img.endswith('.png') and not _img.endswith('_seams.png')]
+        if _imgs == None or len(_imgs) == 0:
+            _imgs.append('ImagePlaceholder_040.png')
+        return _imgs
+ 
+    def _fn_process_time(self,_start=0,_end=0)->str:
+        _calc_time = _end-_start
+        return f'Processing Time: {"%.2f" % _calc_time} seconds'
 
+    def _fn_set_sld_image(self,_val:int=1):
+        if _val > 0:
+            self._sld_image.model.set_value(1)
+            self._sld_image.max = _val
+            self.MLD_IMAGE.set_max(_val)
+    
+    def _fn_img_request(self):
+        _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
+        startTime = time.time()
+        _img_response = self._dalle_api._img_create(self._fld_prompt.model.as_string,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
+        _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
+        self._dalle_api._set_json(f'{_target_dir}{_img_response["created"]}.json','prompt',self._fld_prompt.model.as_string)
+        endTime = time.time()
+        self._lbl_process_time.text = self._fn_process_time(startTime,endTime)
+        self.CURRENT_DIR = _target_dir
+        self._fn_folder_load()
+    
+    def _fn_visualize_seams(self):
+        if self._image.source_url.endswith('_seams.png'):
+            _img_out = f'{(os.path.dirname(self._image.source_url))}/{(os.path.basename(self._image.source_url)).split("_")[0]}.png'
+        else:
+            _img_out = f'{(os.path.dirname(self._image.source_url))}/{(os.path.basename(self._image.source_url)).split(".")[0]}_seams.png'
+        if not os.path.exists(_img_out):
+            _img = Image.open(self._image.source_url)
+            if _img:
+                _img_half = int(_img.size[0]/2)
+                _img_offset = ImageChops.offset(_img,_img_half)
+                _out_file = open(_img_out, 'wb')
+                _img_offset.save(_img_out)
+                _out_file.flush()
+                os.fsync(_out_file)
+                _out_file.close()
+        if os.path.exists(_img_out):
+            try:
+                self._image.source_url = _img_out
+            except:
+                None
+        
     def _on_path_change_clicked(self,_load:bool=False):
         if self._filepicker is None:
             self._filepicker = FilePickerDialog(
@@ -212,31 +264,3 @@ class ExtensionWindow(ui.Window):
             self._fld_img_cache.model.set_value(self._filepicker_selected_folder)
             self._fld_img_cache.tooltip = self._fld_img_cache.model.as_string
             self._dalle_api._set_json(f'{self._dalle_api.ROOT_PATH}/config/seamdless.json','img_cache',f'{dirname}')
-
-    def _fn_dir_list(self, _dirname:str="")->list:
-        if os.path.exists(_dirname):
-            _imgs = [_img for _img in os.listdir(_dirname) if _img.endswith('.png')]
-        if _imgs == None or len(_imgs) == 0:
-            _imgs.append('ImagePlaceholder_040.png')
-        return _imgs
- 
-    def _fn_process_time(self,_start=0,_end=0)->str:
-        _calc_time = _end-_start
-        return f'Processing Time: {"%.2f" % _calc_time} seconds'
-
-    def _fn_set_sld_image(self,_val:int=1):
-        if _val > 0:
-            self._sld_image.model.set_value(1)
-            self._sld_image.max = _val
-            self.MLD_IMAGE.set_max(_val)
-    
-    def _fn_img_request(self):
-        _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
-        startTime = time.time()
-        _img_response = self._dalle_api._img_create(self._fld_prompt.model.as_string,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
-        _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
-        self._dalle_api._set_json(f'{_target_dir}{_img_response["created"]}.json','prompt',self._fld_prompt.model.as_string)
-        endTime = time.time()
-        self._lbl_process_time.text = self._fn_process_time(startTime,endTime)
-        self.CURRENT_DIR = _target_dir
-        self._fn_folder_load()

@@ -90,5 +90,5 @@ class api():
                     urlretrieve(_url,_target_file)
                     print(f'Image sucessfully Downloaded: {_target_file}\n{_url}')
                 else:
-                    print('Image Couldn\'t be retrieved')
+                    carb.log_warn('Image Couldn\'t be retrieved')
             return _target_dir
