@@ -1,9 +1,12 @@
 import os
+import time
+import shutil
+
 import omni.kit.app
 import omni.kit.ui
 import omni.ui as ui
 import omni.usd
-import time
+
 from omni.ui import color as cl
 from omni.kit.window.filepicker.dialog import FilePickerDialog
 from omni.kit.window.filepicker import FilePickerDialog
@@ -102,7 +105,8 @@ class ExtensionWindow(ui.Window):
                     self._image = ui.Image(f'{self._dalle_api.ROOT_PATH}/resources/ImagePlaceholder_040.png', height=512, fill_policy=ui.FillPolicy.PRESERVE_ASPECT_FIT, style={'border_radius':5})
                     self._sld_image = ui.IntSlider(self.MLD_IMAGE,min=1,max=10)
                     self._sld_image.model.add_value_changed_fn(lambda a:self._fn_image_preview(a.as_int))
-                    self._lbl_image_prompt = ui.Label('Image Prompt:\n',word_wrap=True)
+                    self._lbl_image_dir = ui.Label('Image Prompt',word_wrap=True)
+                    self._lbl_image_prompt = ui.Label('',word_wrap=True)
                     with ui.HStack():
                         self._btn_seams = ui.Button('Check Seams', height=24, width=ui.Percent(35),clicked_fn=lambda:self._fn_visualize_seams())
                         self._btn_mask = ui.Button('Mask', width=ui.Percent(35),clicked_fn=lambda:self._fn_visualize_mask())
@@ -111,8 +115,8 @@ class ExtensionWindow(ui.Window):
                             self._cbx_mask.model.append_child_item(None,ui.SimpleStringModel(item[0]))
                         self._cbx_mask.model.get_item_value_model().set_value(2)
                     with ui.HStack():
-                        self._btn_variation = ui.Button('Generate Variation', height=24, width=ui.Percent(50),clicked_fn=lambda:self._fn_variation())
-                        self._btn_inpaint = ui.Button('Generate Inpaint', width=ui.Percent(50),clicked_fn=lambda:self._fn_inpaint())
+                        self._btn_variation = ui.Button('Generate Variation', height=24, width=ui.Percent(50),clicked_fn=lambda:self._fn_img_variation())
+                        self._btn_inpaint = ui.Button('Generate Inpaint', width=ui.Percent(50),clicked_fn=lambda:self._fn_img_edit())
                 with ui.VStack(height=0,width=388,style={'margin':3}):
                     self._cf_api_key = ui.CollapsableFrame('API & Key')
                     with self._cf_api_key:
@@ -173,10 +177,11 @@ class ExtensionWindow(ui.Window):
         self._fn_image_preview(1)
         _prompt,_json_file = self._fn_folder_prompt()
         _prompt_prefix = os.path.basename(os.path.dirname(self.CURRENT_DIR))
+        self._lbl_image_dir.text = _prompt_prefix
         if os.path.exists(_json_file):
-            _prompt_msg = f'{_prompt_prefix}\n{_prompt}'
+            _prompt_msg = f'{_prompt}'
         else:
-            _prompt_msg = f'{_prompt_prefix}\nPrompt not found.'
+            _prompt_msg = f'Prompt not found.'
         self._lbl_image_prompt.text = _prompt_msg
 
     def _fn_folder_prompt(self)->list:
@@ -276,6 +281,58 @@ class ExtensionWindow(ui.Window):
         self.CURRENT_DIR = _target_dir
         self._fn_folder_load()
         self._fn_folder_stats()
+
+    def _fn_img_edit(self):
+        _temp = ''
+        _image = self._image.source_url
+        _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
+        if len(self._image.source_url.split('_mask')) == 1:
+            _image = self._fn_visualize_mask()
+        print(_image)
+        print(os.path.getsize(_image))
+        print(os.path.getsize(_image) > 2000000)
+        if os.path.getsize(_image) > 2000000:         
+            _temp = f'{_image.split(".png")[0]}_temp.png'
+            print(_temp)
+            _img = Image.open(_image)
+            _size = int(_img.size[0]/2)
+            _img_small = _img.resize([_size,_size])
+            _out_file = open(_temp, 'wb')
+            _img_small.save(_temp)
+            _out_file.flush()
+            os.fsync(_out_file)
+            _out_file.close()
+            _img.close()
+            _image = _temp
+        print(os.path.getsize(_image))
+        print(f'Image: {_image}')
+        startTime = time.time()
+        _img_response = self._dalle_api._img_edit(self._lbl_image_prompt.text,_image,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
+        _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
+        self._dalle_api._set_json(f'{_target_dir}{_img_response["created"]}.json','prompt',self._lbl_image_prompt.text)
+        endTime = time.time()
+        self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
+        self.CURRENT_DIR = _target_dir
+        if os.path.exists(_image):
+            shutil.copy(_image,_target_dir)
+        self._fn_folder_load()
+        self._fn_folder_stats()
+        # os.remove(_temp)
+        # print(os.path.exists(_temp))
+
+    def _fn_img_variation(self):
+        _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
+        startTime = time.time()
+        _img_response = self._dalle_api._img_variation(self._image.source_url,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
+        _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
+        self._dalle_api._set_json(f'{_target_dir}{_img_response["created"]}.json','prompt',self._lbl_image_prompt.text)
+        endTime = time.time()
+        self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
+        self.CURRENT_DIR = _target_dir
+        if os.path.exists(self._image.source_url):
+            shutil.copy(self._image.source_url,_target_dir)
+        self._fn_folder_load()
+        self._fn_folder_stats()
     
     def _fn_visualize_seams(self):
         if self._image.source_url.endswith('_040.png'):
@@ -302,6 +359,7 @@ class ExtensionWindow(ui.Window):
                     self._image.source_url = _img_out
                 except:
                     None
+            return _img_out
 
     def _fn_visualize_mask(self):
         if self._image.source_url.endswith('_040.png'):
@@ -333,14 +391,7 @@ class ExtensionWindow(ui.Window):
                     self._image.source_url = _img_out
                 except:
                     None
-    def _fn_inpaint(self):
-        # _img:Image = Image.open(self._image.source_url)
-        # _test = _img.mode
-        # print(_test)
-        None
-
-    def _fn_variation(self):
-        None
+            return _img_out
 
     def _on_path_change_clicked(self,_load:bool=False):
         if self._filepicker is None:

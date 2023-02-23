@@ -60,10 +60,29 @@ class api():
     def _register_openai(self):
         openai.api_key = self._get_api_key()
     
-    def _img_create(self,_prompt:str="",_n:int=1,_size:str='1024x1024')->dict:
+    def _img_create(self,_prompt:str="",_n:int=1,_size:str='256x256')->dict:
         _response = openai.Image.create(
             api_key=self._register_openai(),
             prompt=_prompt,
+            n=_n,
+            size=_size
+        )
+        return _response
+    
+    def _img_edit(self,_prompt:str="",_image:str="",_n:int=1,_size:str='256x256')->dict:
+        _response = openai.Image.create_edit(
+            api_key=self._register_openai(),
+            image=open(_image,'rb'),
+            prompt=_prompt,
+            n=_n,
+            size=_size
+        )
+        return _response
+    
+    def _img_variation(self,_image:str="",_n:int=1,_size:str='256x256')->dict:
+        _response = openai.Image.create_variation(
+            api_key=self._register_openai(),
+            image=open(_image,'rb'),
             n=_n,
             size=_size
         )
