@@ -26,6 +26,7 @@ class ExtensionWindow(ui.Window):
     CURRENT_DIR = ""
     SIZE_LIST = ['1024x1024','512x512','256x256']
     MASK_LIST = [['Center: Small','Mask_Center_Small.png'],['Center: Large','Mask_Center_Large.png'],['Cross: Small','Mask_Cross_Small.png'],['Cross: Large','Mask_Cross_Large.png']]
+    TILE_LIST = ['Tile: 1x1','Tile: 2x2','Tile: 3x3']
 
     def __init__(self, title, win_width, win_height, menu_path, ext_id):
         super().__init__(title, width=win_width, height=win_height)
@@ -122,8 +123,14 @@ class ExtensionWindow(ui.Window):
                         self._cbx_mask.model.get_item_value_model().set_value(2)
                         self._cbx_mask.model.add_item_changed_fn(lambda a, b:self._fn_visualize_mask(a.get_item_value_model().get_value_as_int()))
                     with ui.HStack():
-                        self._btn_variation = ui.Button('Generate Variation', height=24, width=ui.Percent(50),clicked_fn=lambda:self._fn_img_variation())
-                        self._btn_inpaint = ui.Button('Generate Inpaint', width=ui.Percent(50),clicked_fn=lambda:self._fn_img_edit())
+                        self._btn_variation = ui.Button('Generate Variation', height=24, width=ui.Percent(35),clicked_fn=lambda:self._fn_img_variation())
+                        self._btn_inpaint = ui.Button('Generate Inpaint', width=ui.Percent(35),clicked_fn=lambda:self._fn_img_edit())
+                        self._cbx_tile = ui.ComboBox()
+                        for item in self.TILE_LIST:
+                            self._cbx_tile.model.append_child_item(None,ui.SimpleStringModel(item))
+                        self._cbx_tile.model.get_item_value_model().set_value(0)
+                        self._cbx_tile.model.add_item_changed_fn(lambda a, b:self._fn_visualize_mask(a.get_item_value_model().get_value_as_int()))
+
                 with ui.VStack(height=0,width=388,style={'margin':3}):
                     self._cf_api_key = ui.CollapsableFrame('API & Key')
                     with self._cf_api_key:
