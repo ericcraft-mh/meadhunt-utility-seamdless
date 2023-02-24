@@ -114,7 +114,7 @@ class ExtensionWindow(ui.Window):
                     self._lbl_image_dir = ui.Label('Image Prompt',word_wrap=True)
                     self._lbl_image_prompt = ui.Label('',word_wrap=True)
                     with ui.HStack():
-                        self._btn_seams = ui.Button('Check Seams', height=24, width=ui.Percent(35),clicked_fn=lambda:self._fn_visualize_seams())
+                        self._btn_seams = ui.Button('Check Seams', height=24, width=ui.Percent(35),clicked_fn=lambda:self._fn_toggle_seams())
                         self._btn_mask = ui.Button('Mask', width=ui.Percent(35),clicked_fn=lambda:self._fn_toggle_mask())
                         self._cbx_mask = ui.ComboBox()
                         for item in self.MASK_LIST:
@@ -181,8 +181,8 @@ class ExtensionWindow(ui.Window):
     def _fn_img_list(self):
         self._img_list=[f for f in self._fn_dir_list(self.CURRENT_DIR,True)[2] if f.endswith('.png')]
 
-    def _fn_image_preview(self,_val:int=0):
-        if _val == 0:
+    def _fn_image_preview(self,_val:int=-1):
+        if _val == -1:
             _val = self._sld_image.model.as_int
         if len(self._img_list) > 0:
             _img_path = f'{self._img_list[_val-1]}'
@@ -213,10 +213,13 @@ class ExtensionWindow(ui.Window):
         self._btn_mask.checked = True
         _image = self._image.source_url
         _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
-        if len(self._image.source_url.split('_mask')) == 1:
+        if self._image.source_url.find('_seams') != -1 or self._btn_seams.checked:
+            _image = self._fn_visualize_seams()
+        if self._image.source_url.find('_mask') == -1:
             _image = self._fn_visualize_mask()
         _mask = self._image.source_url
-        _image = f'{self._image.source_url.split("_mask")[0]}.png'
+        if self._image.source_url.find("_mask") != -1:
+            _image = f'{self._image.source_url.split("_mask")[0]}.png'
         self._btn_mask.checked = False
         if os.path.getsize(_image) > 4000000:         
             _temp = f'{_image.split(".png")[0]}_temp.png'
@@ -231,14 +234,19 @@ class ExtensionWindow(ui.Window):
             _img.close()
             _image = _temp
         startTime = time.time()
+        print(len(self._fld_prompt.model.as_string))
+        if len(self._fld_prompt.model.as_string) == 0:
+            self._fld_prompt.model.set_value(self._lbl_image_prompt.text)
         _img_response = self._dalle_api._img_edit(self._lbl_image_prompt.text,_image,_mask,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
         _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
         self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',self._lbl_image_prompt.text)
         endTime = time.time()
         self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
         self.CURRENT_DIR = _target_dir
+        _imagenm = f'{self._image.source_url.split("_seams")[0]}.png'
+        self._btn_seams.checked = False
         if os.path.exists(_image):
-            shutil.copy2(_image,f'{_target_dir}1_{os.path.basename(_image)}')
+            shutil.copy2(_image,f'{_target_dir}1_{os.path.basename(_imagenm)}')
         self._fn_folder_load()
         self._fn_folder_stats()
         if os.path.exists(_temp):
@@ -258,16 +266,19 @@ class ExtensionWindow(ui.Window):
         self._fn_folder_load()
         self._fn_folder_stats()
     
+    def _fn_toggle_seams(self):
+        self._btn_seams.checked = not self._btn_seams.checked
+        self._fn_visualize_seams()
+
     def _fn_visualize_seams(self):
         if self._image.source_url.endswith('_040.png'):
             None
         else:
-            if len(self._image.source_url.split('_seams')) > 1:
-                _img_out = f'{os.path.dirname(self._image.source_url)}/{(os.path.basename(self._image.source_url)).split("_seams")[0]}.png'
-                self._btn_seams.checked = False
-            else:
-                _img_out = f'{os.path.dirname(self._image.source_url)}/{(os.path.basename(self._image.source_url)).split(".")[0]}_seams.png'
-                self._btn_seams.checked = True
+            _img_out = f'{os.path.dirname(self._image.source_url)}/{(os.path.basename(self._image.source_url))}'
+            if self._image.source_url.find('_seams') != -1:
+                _img_out = f'{_img_out.split("_seams")[0]}.png'
+            if self._btn_seams.checked:
+                _img_out = f'{_img_out.split(".png")[0]}_seams.png'
             if not os.path.exists(_img_out):
                 _img:Image = Image.open(self._image.source_url)
                 if _img:
