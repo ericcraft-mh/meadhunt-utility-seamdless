@@ -7,7 +7,7 @@ import carb
 
 import openai
 import requests
-import shutil
+
 from urllib.parse import urlparse
 from urllib.request import urlretrieve
 
@@ -69,10 +69,11 @@ class api():
         )
         return _response
     
-    def _img_edit(self,_prompt:str="",_image:str="",_n:int=1,_size:str='256x256')->dict:
+    def _img_edit(self,_prompt:str="",_image:str="",_mask:str="",_n:int=1,_size:str='256x256')->dict:
         _response = openai.Image.create_edit(
             api_key=self._register_openai(),
             image=open(_image,'rb'),
+            mask=open(_mask,'rb'),
             prompt=_prompt,
             n=_n,
             size=_size
@@ -97,7 +98,7 @@ class api():
             if _img_cache == "":
                 _img_cache = f'{self.ROOT_PATH}/resources'
             _target_folder = _url_dict['created']
-            _target_dir = f'{_img_cache}{_target_folder}/'
+            _target_dir = f'{_img_cache}/{_target_folder}/'
             if not os.path.exists(_target_dir):
                 os.mkdir(_target_dir)
             for i in range(0,len(_url_dict['data'])):
