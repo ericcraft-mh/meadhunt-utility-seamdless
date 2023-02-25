@@ -1,6 +1,7 @@
 import os
 import time
 import shutil
+import numpy as np
 
 import omni.kit.app
 import omni.kit.ui
@@ -13,6 +14,7 @@ from omni.kit.window.filepicker import FilePickerDialog
 from omni.kit.widget.filebrowser import FileBrowserItem
 from .dalle import api
 from PIL import Image, ImageChops
+from pathlib import Path
 
 class ExtensionWindow(ui.Window):
     
@@ -25,32 +27,35 @@ class ExtensionWindow(ui.Window):
     MLD_IMAGE = ui.SimpleIntModel(1,min=1,max=4)
     CURRENT_DIR = ""
     SIZE_LIST = ['1024x1024','512x512','256x256']
-    MASK_LIST = [['Center: Small','Mask_Center_Small.png'],['Center: Large','Mask_Center_Large.png'],['Cross: Small','Mask_Cross_Small.png'],['Cross: Large','Mask_Cross_Large.png']]
+    MASK_LIST = ['Center: Small','Center: Large','Cross: Small','Cross: Large']
     TILE_LIST = ['Tile: 1x1','Tile: 2x2','Tile: 3x3']
+    IMG_LIST = []
+    IMG_PLACEHOLDER = []
+    IMG_SRC = []
 
-    def __init__(self, title, win_width, win_height, menu_path, ext_id):
-        super().__init__(title, width=win_width, height=win_height)
+    def __init__(self, title:str=None, ext_id:str=None, menu_path:str=None, **kwargs):
+        super().__init__(title, **kwargs)
         self._path_menu = menu_path
         self._dalle_api = api(ext_id)
         self._filepicker = None
         self._filepicker_selected_folder = ""
         self._path_img_cache = self._dalle_api._get_json(f'{self._dalle_api.ROOT_PATH}/config/seamdless.json','img_cache')
+        self._rsc_path = f'{self._dalle_api.ROOT_PATH}/resources'
         if self._path_img_cache == "":
-            self._path_img_cache = f'{self._dalle_api.ROOT_PATH}/resources'
+            self._path_img_cache = self._rsc_path
+        self._fn_img_placeholder()
+        self.CURRENT_DIR = self._path_img_cache
         self.set_visibility_changed_fn(self._on_visibility_changed)
+        self._provider = ui.ByteImageProvider()
+        self._provider.set_data_array(self.IMG_PLACEHOLDER[0][0],self.IMG_PLACEHOLDER[0][1])
         self._build_ui()
         self._fld_img_cache.model.set_value(self._path_img_cache)
         self._fld_img_cache.tooltip = self._fld_img_cache.model.as_string
         self._cbx_img_size.model.get_item_value_model().set_value(1)
         self._api_key('get',True)
-        self.CURRENT_DIR = self._path_img_cache
-        self._img_list = []
+        self.IMG_LIST = []
         self._load_dir = False
         self._fn_img_list()
-        if len(self._img_list) > 0:
-            self._image.source_url = f'{self._img_list[0]}'
-        else:
-            self._image.source_url = f'{self._dalle_api.ROOT_PATH}/resources/ImagePlaceholder_040.png'
         self._fn_folder_load()
         self._fn_folder_stats()
 
@@ -81,7 +86,7 @@ class ExtensionWindow(ui.Window):
             omni.kit.ui.get_editor_menu().set_value(self._path_menu, False)
 
     def _api_key(self, _type:str='get', _ignore:bool=False):
-        _count = ""
+        _cnt = None
         _str = 'sk-'
         _api_str = ""
         if _type == 'get':
@@ -97,9 +102,9 @@ class ExtensionWindow(ui.Window):
                 self._lbl_api.text = 'API Key Intialized'
                 self._cf_api_key.collapsed = True
         _api_str = self._dalle_api._get_api_key()
-        _count = len(_api_str)
-        if _count > 3:
-            _str += '*' * (_count-3)
+        _cnt = len(_api_str)
+        if _cnt > 3:
+            _str += '*' * (_cnt-3)
         else:
             _str =""
         self._fld_api.model.set_value(_str)
@@ -109,7 +114,7 @@ class ExtensionWindow(ui.Window):
         with self.frame:
             with ui.HStack():
                 with ui.VStack(height=0,style={'margin':3},width=512):
-                    self._image = ui.Image(f'{self._dalle_api.ROOT_PATH}/resources/ImagePlaceholder_040.png', height=512, fill_policy=ui.FillPolicy.PRESERVE_ASPECT_FIT, style={'border_radius':5})
+                    self._image = ui.ImageWithProvider(self._provider, width=512, height=512, style={'border_radius':5})
                     self._sld_image = ui.IntSlider(self.MLD_IMAGE,min=1,max=10)
                     self._sld_image.model.add_value_changed_fn(lambda a:self._fn_image_preview(a.as_int))
                     self._lbl_image_dir = ui.Label('Image Prompt',word_wrap=True)
@@ -119,7 +124,7 @@ class ExtensionWindow(ui.Window):
                         self._btn_mask = ui.Button('Mask', width=ui.Percent(35),clicked_fn=lambda:self._fn_toggle_mask())
                         self._cbx_mask = ui.ComboBox()
                         for item in self.MASK_LIST:
-                            self._cbx_mask.model.append_child_item(None,ui.SimpleStringModel(item[0]))
+                            self._cbx_mask.model.append_child_item(None,ui.SimpleStringModel(item))
                         self._cbx_mask.model.get_item_value_model().set_value(2)
                         self._cbx_mask.model.add_item_changed_fn(lambda a, b:self._fn_visualize_mask(a.get_item_value_model().get_value_as_int()))
                     with ui.HStack():
@@ -185,23 +190,42 @@ class ExtensionWindow(ui.Window):
 # 
 # Image Functions
 # 
-    def _fn_img_list(self):
-        self._img_list=[f for f in self._fn_dir_list(self.CURRENT_DIR,True)[2] if f.endswith('.png')]
+    def _fn_img_placeholder(self):
+        img = Image.new('RGBA',(256,256), (40,40,40))
+        self.IMG_PLACEHOLDER[:] = []
+        np_data = np.asarray(img)
+        self.IMG_PLACEHOLDER.append((np_data,img.size))
 
-    def _fn_image_preview(self,_val:int=-1):
-        if _val == -1:
+    def _fn_img_list(self, _dir:str='', _list:list=[], _type:str='*.png'):
+        # self._img_list=[f for f in self._fn_dir_list(self.CURRENT_DIR,True)[2] if f.endswith('.png')]
+        if _dir == "":
+            _dir = self.CURRENT_DIR
+        if not _dir.endswith('/'):
+            _dir += '/'
+        img_dir = Path(_dir)
+        files = list(img_dir.glob(_type))
+        _list[:] = []
+        for f in files:
+            with Image.open(f) as img:
+                img = img.convert('RGBA')
+                np_data = np.asarray(img).data
+                _list.append((np_data,img.size))
+
+    def _fn_image_preview(self,_val:int=0):
+        if _val == 0:
             _val = self._sld_image.model.as_int
-        if len(self._img_list) > 0:
-            _img_path = f'{self._img_list[_val-1]}'
-        else:
-            _img_path = f'{self._dalle_api.ROOT_PATH}/resources/ImagePlaceholder_040.png'
-        if not os.path.exists(_img_path):
-            _img_path = f'{self._dalle_api.ROOT_PATH}/resources/ImagePlaceholder_040.png'
-        self._image.source_url = _img_path
+        img_path = self.IMG_PLACEHOLDER[0]
+        if len(self.IMG_LIST) > 0:
+            self.IMG_SRC = self.IMG_LIST.copy()[_val-1]
+            img_path = self.IMG_LIST[_val-1]
+        self._provider.set_data_array(img_path[0],img_path[1])
         if self._btn_seams.checked:
-            self._fn_visualize_seams()
-        if self._btn_mask.checked:
-            self._fn_visualize_mask()
+            self._fn_seams()
+        # self._image.source_url = _img_path
+        # if self._btn_seams.checked:
+        #     self._fn_visualize_seams()
+        # if self._btn_mask.checked:
+        #     self._fn_visualize_mask()
 
     def _fn_img_request(self):
         _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
@@ -216,92 +240,100 @@ class ExtensionWindow(ui.Window):
         self._fn_folder_stats()
 
     def _fn_img_edit(self):
-        _temp = ''
-        self._btn_mask.checked = True
-        _image = self._image.source_url
-        _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
-        if self._image.source_url.find('_seams') != -1 or self._btn_seams.checked:
-            _image = self._fn_visualize_seams()
-        if self._image.source_url.find('_mask') == -1:
-            _image = self._fn_visualize_mask()
-        _mask = self._image.source_url
-        if self._image.source_url.find("_mask") != -1:
-            _image = f'{self._image.source_url.split("_mask")[0]}.png'
-        self._btn_mask.checked = False
-        if os.path.getsize(_image) > 4000000:         
-            _temp = f'{_image.split(".png")[0]}_temp.png'
-            _img = Image.open(_image)
-            _size = int(_img.size[0]/2)
-            _img_small = _img.resize([_size,_size])
-            _out_file = open(_temp, 'wb')
-            _img_small.save(_temp)
-            _out_file.flush()
-            os.fsync(_out_file)
-            _out_file.close()
-            _img.close()
-            _image = _temp
-        startTime = time.time()
-        print(len(self._fld_prompt.model.as_string))
-        if len(self._fld_prompt.model.as_string) == 0:
-            self._fld_prompt.model.set_value(self._lbl_image_prompt.text)
-        _img_response = self._dalle_api._img_edit(self._lbl_image_prompt.text,_image,_mask,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
-        _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
-        self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',self._lbl_image_prompt.text)
-        endTime = time.time()
-        self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
-        self.CURRENT_DIR = _target_dir
-        _imagenm = f'{self._image.source_url.split("_seams")[0]}.png'
-        self._btn_seams.checked = False
-        if os.path.exists(_image):
-            shutil.copy2(_image,f'{_target_dir}1_{os.path.basename(_imagenm)}')
-        self._fn_folder_load()
-        self._fn_folder_stats()
-        if os.path.exists(_temp):
-            os.remove(_temp)
+        None
+        # _temp = ''
+        # self._btn_mask.checked = True
+        # _image = self._image.source_url
+        # _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
+        # if len(self._image.source_url.split('_mask')) == 1:
+        #     _image = self._fn_visualize_mask()
+        # _mask = self._image.source_url
+        # _image = f'{self._image.source_url.split("_mask")[0]}.png'
+        # self._btn_mask.checked = False
+        # if os.path.getsize(_image) > 4000000:         
+        #     _temp = f'{_image.split(".png")[0]}_temp.png'
+        #     _img = Image.open(_image)
+        #     _size = int(_img.size[0]/2)
+        #     _img_small = _img.resize([_size,_size])
+        #     _out_file = open(_temp, 'wb')
+        #     _img_small.save(_temp)
+        #     _out_file.flush()
+        #     os.fsync(_out_file)
+        #     _out_file.close()
+        #     _img.close()
+        #     _image = _temp
+        # startTime = time.time()
+        # _img_response = self._dalle_api._img_edit(self._lbl_image_prompt.text,_image,_mask,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
+        # _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
+        # self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',self._lbl_image_prompt.text)
+        # endTime = time.time()
+        # self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
+        # self.CURRENT_DIR = _target_dir
+        # if os.path.exists(_image):
+        #     shutil.copy2(_image,f'{_target_dir}1_{os.path.basename(_image)}')
+        # self._fn_folder_load()
+        # self._fn_folder_stats()
+        # if os.path.exists(_temp):
+        #     os.remove(_temp)
 
     def _fn_img_variation(self):
-        _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
-        startTime = time.time()
-        _img_response = self._dalle_api._img_variation(self._image.source_url,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
-        _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
-        self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',self._lbl_image_prompt.text)
-        endTime = time.time()
-        self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
-        self.CURRENT_DIR = _target_dir
-        if os.path.exists(self._image.source_url):
-            shutil.copy2(self._image.source_url,f'{_target_dir}1_{os.path.basename(self._image.source_url)}')
-        self._fn_folder_load()
-        self._fn_folder_stats()
-    
+        None
+        # _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
+        # startTime = time.time()
+        # _img_response = self._dalle_api._img_variation(self._image.source_url,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
+        # _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
+        # self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',self._lbl_image_prompt.text)
+        # endTime = time.time()
+        # self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
+        # self.CURRENT_DIR = _target_dir
+        # if os.path.exists(self._image.source_url):
+        #     shutil.copy2(self._image.source_url,f'{_target_dir}1_{os.path.basename(self._image.source_url)}')
+        # self._fn_folder_load()
+        # self._fn_folder_stats()
     def _fn_toggle_seams(self):
         self._btn_seams.checked = not self._btn_seams.checked
-        self._fn_visualize_seams()
+        self._fn_image_preview()
 
-    def _fn_visualize_seams(self):
-        if self._image.source_url.endswith('_040.png'):
-            None
+    def _fn_seams(self):
+        None
+        slider_val = self._sld_image.model.as_int-1
+        if len(self.IMG_SRC) == 0:
+            self.IMG_SRC = self.IMG_LIST.copy()[slider_val]
         else:
-            _img_out = f'{os.path.dirname(self._image.source_url)}/{(os.path.basename(self._image.source_url))}'
-            if self._image.source_url.find('_seams') != -1:
-                _img_out = f'{_img_out.split("_seams")[0]}.png'
-            if self._btn_seams.checked:
-                _img_out = f'{_img_out.split(".png")[0]}_seams.png'
-            if not os.path.exists(_img_out):
-                _img:Image = Image.open(self._image.source_url)
-                if _img:
-                    _img_half = int(_img.size[0]/2)
-                    _img_offset = ImageChops.offset(_img,_img_half)
-                    _out_file = open(_img_out, 'wb')
-                    _img_offset.save(_img_out)
-                    _out_file.flush()
-                    os.fsync(_out_file)
-                    _out_file.close()
-            if os.path.exists(_img_out):
-                try:
-                    self._image.source_url = _img_out
-                except:
-                    None
-            return _img_out
+            self.IMG_LIST[slider_val] = self.IMG_SRC
+            self.IMG_SRC = []
+        img = self.IMG_LIST[slider_val]
+        new_img = Image.fromarray(np.asarray(img[0]))
+        offset = (int(img[1][0]/2),int(img[1][1]/2))
+        img_offset = ImageChops.offset(new_img,offset[0],offset[1])
+        np_data = np.asarray(img_offset).data
+        self._provider.set_data_array(np_data,img_offset.size)
+
+        # if self._image.source_url.endswith('_040.png'):
+        #     None
+        # else:
+        #     if len(self._image.source_url.split('_seams')) > 1:
+        #         _img_out = f'{os.path.dirname(self._image.source_url)}/{(os.path.basename(self._image.source_url)).split("_seams")[0]}.png'
+        #         self._btn_seams.checked = False
+        #     else:
+        #         _img_out = f'{os.path.dirname(self._image.source_url)}/{(os.path.basename(self._image.source_url)).split(".")[0]}_seams.png'
+        #         self._btn_seams.checked = True
+        #     if not os.path.exists(_img_out):
+        #         _img:Image = Image.open(self._image.source_url)
+        #         if _img:
+        #             _img_half = int(_img.size[0]/2)
+        #             _img_offset = ImageChops.offset(_img,_img_half)
+        #             _out_file = open(_img_out, 'wb')
+        #             _img_offset.save(_img_out)
+        #             _out_file.flush()
+        #             os.fsync(_out_file)
+        #             _out_file.close()
+        #     if os.path.exists(_img_out):
+        #         try:
+        #             self._image.source_url = _img_out
+        #         except:
+        #             None
+        #     return _img_out
 
     def _fn_toggle_mask(self):
         self._btn_mask.checked = not self._btn_mask.checked
@@ -342,11 +374,11 @@ class ExtensionWindow(ui.Window):
 # Folder Functions
 # 
     def _fn_folder_load(self):
-        self._fn_img_list()
-        if not self._btn_seams.checked:
-            self._img_list = [f for f in self._img_list if f.find('_seam') == -1]
-        if not self._btn_mask.checked:
-            self._img_list = [f for f in self._img_list if f.find('_mask') == -1]
+        # self._fn_img_list()
+        # if not self._btn_seams.checked:
+        #     self.IMG_LIST = [f for f in self.IMG_LIST if f.find('_seam') == -1]
+        # if not self._btn_mask.checked:
+        #     self.IMG_LIST = [f for f in self.IMG_LIST if f.find('_mask') == -1]
         self._fn_set_sld_image()
         self._fn_image_preview(1)
         _prompt,_json_file = self._fn_folder_prompt()
@@ -455,7 +487,7 @@ class ExtensionWindow(ui.Window):
         return total
 
     def _fn_set_sld_image(self):
-        _img_cnt = len(self._img_list)
+        _img_cnt = len(self.IMG_LIST)
         if _img_cnt == 0:
             _img_cnt = 1
         if _img_cnt > 0:
@@ -516,7 +548,7 @@ class ExtensionWindow(ui.Window):
 
     def _on_dir_pick(self, dialog:FilePickerDialog, filename:str, dirname:str):
         dialog.hide()
-        self._fn_img_list()
+        self._fn_img_list(dirname,self.IMG_LIST)
         if self._load_dir:
             self.CURRENT_DIR = dirname.strip('/')
             self._fn_folder_load()
