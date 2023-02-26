@@ -28,10 +28,10 @@ class ExtensionWindow(ui.Window):
     CURRENT_DIR = ""
     SIZE_LIST = ['1024x1024','512x512','256x256']
     MASK_LIST = ['Center: Small','Center: Large','Cross: Small','Cross: Large']
-    TILE_LIST = ['Tile: 1x1','Tile: 2x2','Tile: 3x3']
+    MASK_IMG = []
+    TILE_LIST = ['Tile: 1x1','Tile: 2x2','Tile: 3x3','Tile: 4x4','Tile: 5x5']
     IMG_LIST = []
     IMG_PLACEHOLDER = []
-    IMG_SRC = []
 
     def __init__(self, title:str=None, ext_id:str=None, menu_path:str=None, **kwargs):
         super().__init__(title, **kwargs)
@@ -126,7 +126,7 @@ class ExtensionWindow(ui.Window):
                         for item in self.MASK_LIST:
                             self._cbx_mask.model.append_child_item(None,ui.SimpleStringModel(item))
                         self._cbx_mask.model.get_item_value_model().set_value(2)
-                        self._cbx_mask.model.add_item_changed_fn(lambda a, b:self._fn_visualize_mask(a.get_item_value_model().get_value_as_int()))
+                        self._cbx_mask.model.add_item_changed_fn(lambda a, b:self._fn_image_preview())
                     with ui.HStack():
                         self._btn_variation = ui.Button('Generate Variation', height=24, width=ui.Percent(35),clicked_fn=lambda:self._fn_img_variation())
                         self._btn_inpaint = ui.Button('Generate Inpaint', width=ui.Percent(35),clicked_fn=lambda:self._fn_img_edit())
@@ -134,7 +134,7 @@ class ExtensionWindow(ui.Window):
                         for item in self.TILE_LIST:
                             self._cbx_tile.model.append_child_item(None,ui.SimpleStringModel(item))
                         self._cbx_tile.model.get_item_value_model().set_value(0)
-                        self._cbx_tile.model.add_item_changed_fn(lambda a, b:self._fn_visualize_mask(a.get_item_value_model().get_value_as_int()))
+                        self._cbx_tile.model.add_item_changed_fn(lambda a, b:self._fn_image_preview())
 
                 with ui.VStack(height=0,width=388,style={'margin':3}):
                     self._cf_api_key = ui.CollapsableFrame('API & Key')
@@ -197,7 +197,6 @@ class ExtensionWindow(ui.Window):
         self.IMG_PLACEHOLDER.append((np_data,img.size))
 
     def _fn_img_list(self, _dir:str='', _list:list=[], _type:str='*.png'):
-        # self._img_list=[f for f in self._fn_dir_list(self.CURRENT_DIR,True)[2] if f.endswith('.png')]
         if _dir == "":
             _dir = self.CURRENT_DIR
         if not _dir.endswith('/'):
@@ -214,18 +213,16 @@ class ExtensionWindow(ui.Window):
     def _fn_image_preview(self,_val:int=0):
         if _val == 0:
             _val = self._sld_image.model.as_int
-        img_path = self.IMG_PLACEHOLDER[0]
+        img = self.IMG_PLACEHOLDER[0]
         if len(self.IMG_LIST) > 0:
-            self.IMG_SRC = self.IMG_LIST.copy()[_val-1]
-            img_path = self.IMG_LIST[_val-1]
-        self._provider.set_data_array(img_path[0],img_path[1])
-        if self._btn_seams.checked:
-            self._fn_seams()
-        # self._image.source_url = _img_path
-        # if self._btn_seams.checked:
-        #     self._fn_visualize_seams()
-        # if self._btn_mask.checked:
-        #     self._fn_visualize_mask()
+            img = self.IMG_LIST.copy()[_val-1]
+            if self._btn_seams.checked:
+                img = self._fn_seams(img)
+            if self._btn_mask.checked:
+                img = self._fn_mask(img)
+            if self._cbx_tile.model.get_item_value_model().as_int > 0:
+                img = self._fn_tiles(img)
+        self._provider.set_data_array(img[0],img[1])
 
     def _fn_img_request(self):
         _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
@@ -290,95 +287,60 @@ class ExtensionWindow(ui.Window):
         #     shutil.copy2(self._image.source_url,f'{_target_dir}1_{os.path.basename(self._image.source_url)}')
         # self._fn_folder_load()
         # self._fn_folder_stats()
+
     def _fn_toggle_seams(self):
         self._btn_seams.checked = not self._btn_seams.checked
         self._fn_image_preview()
 
-    def _fn_seams(self):
-        None
-        slider_val = self._sld_image.model.as_int-1
-        if len(self.IMG_SRC) == 0:
-            self.IMG_SRC = self.IMG_LIST.copy()[slider_val]
-        else:
-            self.IMG_LIST[slider_val] = self.IMG_SRC
-            self.IMG_SRC = []
-        img = self.IMG_LIST[slider_val]
-        new_img = Image.fromarray(np.asarray(img[0]))
-        offset = (int(img[1][0]/2),int(img[1][1]/2))
-        img_offset = ImageChops.offset(new_img,offset[0],offset[1])
-        np_data = np.asarray(img_offset).data
-        self._provider.set_data_array(np_data,img_offset.size)
-
-        # if self._image.source_url.endswith('_040.png'):
-        #     None
-        # else:
-        #     if len(self._image.source_url.split('_seams')) > 1:
-        #         _img_out = f'{os.path.dirname(self._image.source_url)}/{(os.path.basename(self._image.source_url)).split("_seams")[0]}.png'
-        #         self._btn_seams.checked = False
-        #     else:
-        #         _img_out = f'{os.path.dirname(self._image.source_url)}/{(os.path.basename(self._image.source_url)).split(".")[0]}_seams.png'
-        #         self._btn_seams.checked = True
-        #     if not os.path.exists(_img_out):
-        #         _img:Image = Image.open(self._image.source_url)
-        #         if _img:
-        #             _img_half = int(_img.size[0]/2)
-        #             _img_offset = ImageChops.offset(_img,_img_half)
-        #             _out_file = open(_img_out, 'wb')
-        #             _img_offset.save(_img_out)
-        #             _out_file.flush()
-        #             os.fsync(_out_file)
-        #             _out_file.close()
-        #     if os.path.exists(_img_out):
-        #         try:
-        #             self._image.source_url = _img_out
-        #         except:
-        #             None
-        #     return _img_out
+    def _fn_seams(self,img:tuple) -> tuple:
+        if img:
+            # img[0] = image data
+            # img[1] = image size
+            # img[1][0] = image size width/x
+            # img[1][1] = image size height/y
+            new_img = Image.fromarray(np.asarray(img[0]))
+            offset = (int(img[1][0]/2),int(img[1][1]/2))
+            img_offset = ImageChops.offset(new_img,offset[0],offset[1])
+            np_data = np.asarray(img_offset).data
+            return (np_data,img_offset.size)
 
     def _fn_toggle_mask(self):
         self._btn_mask.checked = not self._btn_mask.checked
-        self._fn_visualize_mask()
+        self._fn_image_preview()
 
-    def _fn_visualize_mask(self,_maskint=-1):
-        if self._image.source_url.endswith('_040.png'):
-            None
-        else:
-            if _maskint == -1:
-                _maskint = self._cbx_mask.model.get_item_value_model().as_int
-            _mask = f'{self._dalle_api.ROOT_PATH}/resources/{self.MASK_LIST[_maskint][1]}'
-            _img_out = f'{os.path.dirname(self._image.source_url)}/{(os.path.basename(self._image.source_url))}'
-            if self._image.source_url.find('_mask') != -1:
-                _img_out = f'{_img_out.split("_mask")[0]}.png'
-            if self._btn_mask.checked:
-                _img_out = f'{_img_out.split(".png")[0]}_mask{_maskint}.png'
-            if not os.path.exists(_img_out):
-                _img:Image = Image.open(self._image.source_url)
-                _alpha:Image = Image.open(_mask)
-                if _img:
-                    _img_size = int(_img.size[0])
-                    _img_alpha = _alpha.convert('L')
-                    _img_alpha = _img_alpha.resize([_img_size,_img_size])
-                    _img.putalpha(_img_alpha)
-                    _out_file = open(_img_out, 'wb')
-                    _img.save(_img_out)
-                    _out_file.flush()
-                    os.fsync(_out_file)
-                    _out_file.close()
-            if os.path.exists(_img_out):
-                try:
-                    self._image.source_url = _img_out
-                except:
-                    None
-            return _img_out
-# 
+    def _fn_mask(self,img:tuple) -> tuple:
+        if img:
+            # img[0] = image data
+            # img[1] = image size
+            mask_index = self._cbx_mask.model.get_item_value_model().as_int
+            self._fn_img_list(self._rsc_path,self.MASK_IMG,'*Mask*.png')
+            mask_img = self.MASK_IMG[mask_index]
+            mask = Image.fromarray(np.asarray(mask_img[0]))
+            mask = mask.convert('L')
+            mask = mask.resize(img[1])
+            new_img = Image.fromarray(np.asarray(img[0]))
+            new_img.putalpha(mask)
+            np_data = np.asarray(new_img).data
+            return (np_data,new_img.size)
+    
+    def _fn_tiles(self,img:tuple) -> tuple:
+        if img:
+            tiles = self._cbx_tile.model.get_item_value_model().as_int+1
+            img_w,img_h = img[1]
+            new_img = Image.new('RGBA',(img_w*tiles,img_h*tiles))
+            src_img = Image.fromarray(np.asarray(img[0]))
+            w,h = new_img.size
+            for i in range(0, w, img_w):
+                for j in range(0, h, img_h):
+                    new_img.paste(src_img, (i,j))
+            new_img = new_img.resize(img[1])
+            np_data = np.asarray(new_img).data
+            return (np_data,new_img.size)
+
+#           
 # Folder Functions
 # 
     def _fn_folder_load(self):
-        # self._fn_img_list()
-        # if not self._btn_seams.checked:
-        #     self.IMG_LIST = [f for f in self.IMG_LIST if f.find('_seam') == -1]
-        # if not self._btn_mask.checked:
-        #     self.IMG_LIST = [f for f in self.IMG_LIST if f.find('_mask') == -1]
         self._fn_set_sld_image()
         self._fn_image_preview(1)
         _prompt,_json_file = self._fn_folder_prompt()
@@ -396,12 +358,6 @@ class ExtensionWindow(ui.Window):
         _prompt = self._dalle_api._get_json(f'{_json_file}','prompt')
         return [_prompt,_json_file]
 
-    # def _fn_dir_list(self, _dirname:str="")->list:
-    #     if os.path.exists(_dirname):
-    #         _imgs = [_img for _img in os.listdir(_dirname) if _img.endswith('.png') and not len(_img.split('_')) > 1]
-    #     if _imgs == None or len(_imgs) == 0:
-    #         _imgs.append('ImagePlaceholder_040.png')
-    #     return _imgs
     def _fn_dir_list(self, _dirname:str="",_rootonly:bool=False)->list:
         """
         Returns all files and folders.\n
@@ -550,6 +506,9 @@ class ExtensionWindow(ui.Window):
         dialog.hide()
         self._fn_img_list(dirname,self.IMG_LIST)
         if self._load_dir:
+            self._btn_seams.checked = False
+            self._btn_mask.checked = False
+            self._cbx_tile.model.get_item_value_model().set_value(0)
             self.CURRENT_DIR = dirname.strip('/')
             self._fn_folder_load()
             self._load_dir = False
