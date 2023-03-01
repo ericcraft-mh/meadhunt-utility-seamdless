@@ -61,6 +61,10 @@ class api():
         openai.api_key = self._get_api_key()
     
     def _img_create(self,_prompt:str="",_n:int=1,_size:str='256x256')->dict:
+        '''
+        API Referece:
+        https://platform.openai.com/docs/api-reference/images/create
+        '''
         _response = openai.Image.create(
             api_key=self._register_openai(),
             prompt=_prompt,
@@ -70,6 +74,10 @@ class api():
         return _response
     
     def _img_edit(self,_prompt:str="",_image:str="",_mask:str="",_n:int=1,_size:str='256x256')->dict:
+        '''
+        API Referece:
+        https://platform.openai.com/docs/api-reference/images/create-edit
+        '''
         _response = openai.Image.create_edit(
             api_key=self._register_openai(),
             image=open(_image,'rb'),
@@ -81,6 +89,10 @@ class api():
         return _response
     
     def _img_variation(self,_image:str="",_n:int=1,_size:str='256x256')->dict:
+        '''
+        API Referece:
+        https://platform.openai.com/docs/api-reference/images/create-variation
+        '''
         _response = openai.Image.create_variation(
             api_key=self._register_openai(),
             image=open(_image,'rb'),
@@ -98,7 +110,7 @@ class api():
             if _img_cache == "":
                 _img_cache = f'{self.ROOT_PATH}/resources'
             _target_folder = _url_dict['created']
-            _target_dir = f'{_img_cache}/{_target_folder}/'
+            _target_dir = f'{_img_cache}/{_target_folder}'
             if not os.path.exists(_target_dir):
                 os.mkdir(_target_dir)
             for i in range(0,len(_url_dict['data'])):
@@ -106,7 +118,7 @@ class api():
                 _response = requests.get(_url, stream = True)
 
                 if _response.status_code == 200:
-                    _target_file = f'{_target_dir}{self._img_name(_url_dict,i)}'
+                    _target_file = f'{_target_dir}/{self._img_name(_url_dict,i)}'
                     urlretrieve(_url,_target_file)
                     print(f'Image sucessfully Downloaded: {_target_file}\n{_url}')
                 else:

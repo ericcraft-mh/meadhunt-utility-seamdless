@@ -5,7 +5,11 @@ import omni.ui as ui
 import omni.kit.ui
 import omni.kit.app
 
+import requests
+import os
+
 from .window import ExtensionWindow
+from urllib.request import urlretrieve
 
 # Any class derived from `omni.ext.IExt` in top level module (defined in `python.modules` of `extension.toml`) will be
 # instantiated when extension gets enabled and `on_startup(ext_id)` will be called. Later when extension gets disabled
@@ -17,7 +21,7 @@ class SeaMDLess(omni.ext.IExt):
     WINDOW_TITLE = 'SeaMDLess'
     WINDOW_SIZE = [936,706]
     def on_startup(self, ext_id):
-        self._ext_id = ext_id        
+        self._ext_id = ext_id
         carb.log_info(f'[meadhunt.utility.seamdless] {self._get_extension_info("package","title")} startup')
         self._menu_path = f'Window/Mead & Hunt/{self.WINDOW_TITLE}'
         self._window = None
@@ -45,7 +49,7 @@ class SeaMDLess(omni.ext.IExt):
         if toggled:
             if self._window is None:
                 _version = self._get_extension_info('package','version')
-                self._window = ExtensionWindow(f'{self.WINDOW_TITLE} v{_version}', self.WINDOW_SIZE[0], self.WINDOW_SIZE[1], menu, self._ext_id)
+                self._window = ExtensionWindow(f'{self.WINDOW_TITLE} v{_version}', self._ext_id, menu, width=self.WINDOW_SIZE[0], height=self.WINDOW_SIZE[1])
             else:
                 self._window.show()
         else:
