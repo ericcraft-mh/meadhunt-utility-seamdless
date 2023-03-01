@@ -308,8 +308,6 @@ class ExtensionWindow(ui.Window):
         prompt = self._fld_prompt.model.as_string
         if prompt == '' and self._lbl_image_prompt.text != 'Prompt not found.':
             prompt = self._lbl_image_prompt.text
-        img_out.show()
-        mask_out.show()
         _img_response = self._dalle_api._img_edit(prompt,img_tmp,mask_tmp,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
         _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
         self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',prompt)
@@ -317,10 +315,7 @@ class ExtensionWindow(ui.Window):
         self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
         self.CURRENT_DIR = _target_dir
         if os.path.exists(img_tmp):
-            shutil.copy2(img_tmp,f'{_target_dir}')
-        self._fn_img_list(self.CURRENT_DIR,self.IMG_LIST)
-        self._fn_folder_load()
-        self._fn_folder_stats()
+            shutil.copy2(img_tmp,f'{_target_dir}/{os.path.basename(img_tmp)}')
         self._btn_seams.checked = False
         self._btn_mask.checked = False
         self._cbx_tile.model.get_item_value_model().set_value(0)
@@ -328,6 +323,9 @@ class ExtensionWindow(ui.Window):
             os.remove(img_tmp)
         if os.path.exists(mask_tmp):
             os.remove(mask_tmp)
+        self._fn_img_list(self.CURRENT_DIR,self.IMG_LIST)
+        self._fn_folder_load()
+        self._fn_folder_stats()
 
     def _fn_img_variation(self):
         _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
@@ -341,7 +339,7 @@ class ExtensionWindow(ui.Window):
         self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
         self.CURRENT_DIR = _target_dir
         if os.path.exists(img_path):
-            shutil.copy2(img_path,f'{_target_dir}1_{os.path.basename(img_path)}')
+            shutil.copy2(img_path,f'{_target_dir}/1_{os.path.basename(img_path)}')
         self._fn_img_list(self.CURRENT_DIR,self.IMG_LIST)
         self._fn_folder_load()
         self._fn_folder_stats()

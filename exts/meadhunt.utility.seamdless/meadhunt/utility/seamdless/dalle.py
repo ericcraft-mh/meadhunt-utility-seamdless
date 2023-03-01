@@ -61,6 +61,10 @@ class api():
         openai.api_key = self._get_api_key()
     
     def _img_create(self,_prompt:str="",_n:int=1,_size:str='256x256')->dict:
+        '''
+        API Referece:
+        https://platform.openai.com/docs/api-reference/images/create
+        '''
         _response = openai.Image.create(
             api_key=self._register_openai(),
             prompt=_prompt,
@@ -70,6 +74,10 @@ class api():
         return _response
     
     def _img_edit(self,_prompt:str="",_image:str="",_mask:str="",_n:int=1,_size:str='256x256')->dict:
+        '''
+        API Referece:
+        https://platform.openai.com/docs/api-reference/images/create-edit
+        '''
         _response = openai.Image.create_edit(
             api_key=self._register_openai(),
             image=open(_image,'rb'),
@@ -81,6 +89,10 @@ class api():
         return _response
     
     def _img_variation(self,_image:str="",_n:int=1,_size:str='256x256')->dict:
+        '''
+        API Referece:
+        https://platform.openai.com/docs/api-reference/images/create-variation
+        '''
         _response = openai.Image.create_variation(
             api_key=self._register_openai(),
             image=open(_image,'rb'),
