@@ -277,6 +277,7 @@ class ExtensionWindow(ui.Window):
         endTime = time.time()
         self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
         self.CURRENT_DIR = _target_dir
+        self._fn_img_list(self.CURRENT_DIR,self.IMG_LIST)
         self._fn_folder_load()
         self._fn_folder_stats()
 
