@@ -2,19 +2,26 @@ import os
 import time
 import shutil
 import numpy as np
+import requests
+import math
+import tempfile
 
 import omni.kit.app
+import omni.kit.commands
 import omni.kit.ui
 import omni.ui as ui
 import omni.usd
+import carb
 
 from omni.ui import color as cl
 from omni.kit.window.filepicker.dialog import FilePickerDialog
 from omni.kit.window.filepicker import FilePickerDialog
 from omni.kit.widget.filebrowser import FileBrowserItem
+from pxr import Usd, UsdGeom, Sdf, UsdShade, Tf
 from .dalle import api
 from PIL import Image, ImageChops
 from pathlib import Path
+from urllib.request import urlretrieve
 
 class ExtensionWindow(ui.Window):
     
@@ -32,6 +39,7 @@ class ExtensionWindow(ui.Window):
     TILE_LIST = ['Tile: 1x1','Tile: 2x2','Tile: 3x3','Tile: 4x4','Tile: 5x5']
     IMG_LIST = []
     IMG_PLACEHOLDER = []
+    MAT_LIST = ['Omni PBR','Backplate']
 
     def __init__(self, title:str=None, ext_id:str=None, menu_path:str=None, **kwargs):
         super().__init__(title, **kwargs)
@@ -41,6 +49,19 @@ class ExtensionWindow(ui.Window):
         self._filepicker_selected_folder = ""
         self._path_img_cache = self._dalle_api._get_json(f'{self._dalle_api.ROOT_PATH}/config/seamdless.json','img_cache')
         self._rsc_path = f'{self._dalle_api.ROOT_PATH}/resources'
+        # Download latest Backplate.mdl file from GitHub
+        mdl_url = 'https://raw.githubusercontent.com/ericcraft-mh/meadhunt-mesh-backplate/main/exts/meadhunt.mesh.backplate/assets/BackPlate.mdl'
+        mtl_folder = f'{self._rsc_path}/materials'
+        self._mdl_file = f'{mtl_folder}/{os.path.basename(mdl_url)}'
+        if not os.path.exists(self._mdl_file):
+            if not os.path.exists(mtl_folder):
+                os.mkdir(mtl_folder)
+            response = requests.get(mdl_url, stream = True)
+            if response.status_code == 200:
+                urlretrieve(mdl_url,self._mdl_file)
+                carb.log_info(f'Backplate.mdl sucessfully Downloaded: {self._mdl_file}\n{mdl_url}')
+            else:
+                carb.log_warn('Backplate.mdl Couldn\'t be retrieved')
         if self._path_img_cache == "":
             self._path_img_cache = self._rsc_path
         self._fn_img_placeholder()
@@ -91,11 +112,11 @@ class ExtensionWindow(ui.Window):
         _api_str = ""
         if _type == 'get':
             _api_str = self._dalle_api._get_api_key(_ignore)
-            if _api_str.find('sk-') != -1:
+            if len(_api_str) == 51:
                 self._lbl_api.text = 'API Key Intialized'
                 self._cf_api_key.collapsed = True
         if _type == 'set':
-            if self._fld_api.model.get_value_as_string().find('*') != -1:
+            if len(self._fld_api.model.get_value_as_string()) != 51:
                 self._lbl_api.text = 'Invalid API Key'
             else:
                 self._dalle_api._set_json(f'{self._dalle_api.ROOT_PATH}/config/api.json','openai',self._fld_api.model.get_value_as_string())
@@ -129,7 +150,7 @@ class ExtensionWindow(ui.Window):
                         self._cbx_mask.model.add_item_changed_fn(lambda a, b:self._fn_image_preview())
                     with ui.HStack():
                         self._btn_variation = ui.Button('Generate Variation', height=24, width=ui.Percent(35),clicked_fn=lambda:self._fn_img_variation())
-                        self._btn_inpaint = ui.Button('Generate Inpaint', width=ui.Percent(35),clicked_fn=lambda:self._fn_img_edit())
+                        self._btn_inpaint = ui.Button('Generate Inpaint', width=ui.Percent(35),clicked_fn=lambda:self._fn_img_edit(), enabled=False, style={'Button':{'background_color':cl("#404040")}})
                         self._cbx_tile = ui.ComboBox()
                         for item in self.TILE_LIST:
                             self._cbx_tile.model.append_child_item(None,ui.SimpleStringModel(item))
@@ -141,13 +162,14 @@ class ExtensionWindow(ui.Window):
                     with self._cf_api_key:
                         with ui.VStack(height=0):
                             self._lbl_api = ui.Label('API Key Not Intialized',style=_style_lbl)
-                            self._fld_api = ui.StringField()
+                            self._fld_api = ui.StringField(password_mode=True)
                             self._btn_api_Key = ui.Button('Set API Key', clicked_fn=lambda:self._api_key('set'))
                     self._cf_prompt = ui.CollapsableFrame('AI Prompt and Settings')
                     with self._cf_prompt:
                         with ui.VStack(height=0):
                             self._lbl_prompt = ui.Label('Enter AI Prompt',style=_style_lbl)
                             self._fld_prompt = ui.StringField()
+                            self._fld_prompt.model.add_value_changed_fn(lambda m:self._fn_prompt_changed())
                             self._lbl_count = ui.Label('Select the number of images to generate',style=_style_lbl)
                             self._sld_count = ui.IntSlider(self.MLD_COUNT,min=1,max=10)
                             self._lbl_size = ui.Label('Select the size of the images to generate',style=_style_lbl)
@@ -161,6 +183,17 @@ class ExtensionWindow(ui.Window):
                             self._cbx_preview_size.model.get_item_value_model().set_value(1)
                             self._cbx_preview_size.style = {'background_color':cl('#454545')}
                             self._btn_request = ui.Button('Request AI Image',clicked_fn=lambda:(self._fn_img_request()))
+                    self._cf_material = ui.CollapsableFrame('Material Settings',collapsed=False)
+                    with self._cf_material:
+                        with ui.VStack(height=0, width=388):
+                            with ui.HStack():
+                                ui.Label('Material Name', width=ui.Percent(20))
+                                self._fld_mtl_name = ui.StringField(height=self.BUTTON_SIZE)
+                            with ui.HStack():
+                                ui.Button('Generate Material', width=ui.Percent(50), height=self.BUTTON_SIZE, clicked_fn=lambda :self._fn_gen_material())
+                                self._cbx_material = ui.ComboBox()
+                                for item in self.MAT_LIST:
+                                    self._cbx_material.model.append_child_item(None,ui.SimpleStringModel(item))
                     self._cf_settings = ui.CollapsableFrame('SeaMDLess Settings',collapsed=False)
                     with self._cf_settings:
                         with ui.VStack(height=0, width=388):
@@ -208,7 +241,7 @@ class ExtensionWindow(ui.Window):
             with Image.open(f) as img:
                 img = img.convert('RGBA')
                 np_data = np.asarray(img).data
-                _list.append((np_data,img.size))
+                _list.append((np_data,img.size,f))
 
     def _fn_image_preview(self,_val:int=0):
         if _val == 0:
@@ -223,6 +256,17 @@ class ExtensionWindow(ui.Window):
             if self._cbx_tile.model.get_item_value_model().as_int > 0:
                 img = self._fn_tiles(img)
         self._provider.set_data_array(img[0],img[1])
+        fld_mdl = self._fld_mtl_name.model
+        if len(self.IMG_LIST) != 0:
+            fld_str = fld_mdl.as_string
+            fld_arr = [i for i in self.IMG_LIST if Path(os.path.basename(i[2])).stem.replace('-','_') == fld_str]
+            if len(fld_arr) > 0 or len(fld_str) == 0:
+                img_nm = os.path.basename(self.IMG_LIST[_val-1][2])
+                img_nm = Path(img_nm).stem.replace('-','_')
+                fld_mdl.set_value(img_nm)
+                fld_str = fld_mdl.as_string           
+        else:
+            fld_mdl.set_value('')
 
     def _fn_img_request(self):
         _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
@@ -237,56 +281,70 @@ class ExtensionWindow(ui.Window):
         self._fn_folder_stats()
 
     def _fn_img_edit(self):
-        None
-        # _temp = ''
-        # self._btn_mask.checked = True
-        # _image = self._image.source_url
-        # _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
-        # if len(self._image.source_url.split('_mask')) == 1:
-        #     _image = self._fn_visualize_mask()
-        # _mask = self._image.source_url
-        # _image = f'{self._image.source_url.split("_mask")[0]}.png'
-        # self._btn_mask.checked = False
-        # if os.path.getsize(_image) > 4000000:         
-        #     _temp = f'{_image.split(".png")[0]}_temp.png'
-        #     _img = Image.open(_image)
-        #     _size = int(_img.size[0]/2)
-        #     _img_small = _img.resize([_size,_size])
-        #     _out_file = open(_temp, 'wb')
-        #     _img_small.save(_temp)
-        #     _out_file.flush()
-        #     os.fsync(_out_file)
-        #     _out_file.close()
-        #     _img.close()
-        #     _image = _temp
-        # startTime = time.time()
-        # _img_response = self._dalle_api._img_edit(self._lbl_image_prompt.text,_image,_mask,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
-        # _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
-        # self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',self._lbl_image_prompt.text)
-        # endTime = time.time()
-        # self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
-        # self.CURRENT_DIR = _target_dir
-        # if os.path.exists(_image):
-        #     shutil.copy2(_image,f'{_target_dir}1_{os.path.basename(_image)}')
-        # self._fn_folder_load()
-        # self._fn_folder_stats()
-        # if os.path.exists(_temp):
-        #     os.remove(_temp)
+        mask_tmp = f'{self._path_img_cache}/{int(time.time())}_mask_tmp.png'
+        img_tmp = f'{self._path_img_cache}/{int(time.time())}_img_tmp.png'
+        self._btn_mask.checked = True
+        _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
+        sld_img = self._sld_image.model.as_int-1
+        cbx_size = self._cbx_img_size.model.get_item_value_model().as_int
+        _size = int(self.SIZE_LIST[cbx_size].split('x')[0])
+        img = Image.fromarray(np.asarray(self.IMG_LIST.copy()[sld_img][0]))
+        img = img.resize((_size,_size))
+        img = img.convert('RGB')
+        img = (img,img.size,img_tmp)
+        if self._btn_seams.checked:
+            img = self._fn_seams(img)
+        if self._btn_mask.checked:
+            mask_img = self._fn_mask(img)
+        if self._cbx_tile.model.get_item_value_model().as_int > 0:
+            img = self._fn_tiles(img)
+            if self._btn_mask.checked:
+                mask_img = self._fn_tiles(mask_img)
+        mask_out = Image.fromarray(np.asarray(mask_img[0]))
+        mask_out.save(mask_tmp)
+        img_out = Image.fromarray(np.asarray(img[0]))
+        img_out.save(img_tmp)
+        startTime = time.time()
+        prompt = self._fld_prompt.model.as_string
+        if prompt == '' and self._lbl_image_prompt.text != 'Prompt not found.':
+            prompt = self._lbl_image_prompt.text
+        img_out.show()
+        mask_out.show()
+        _img_response = self._dalle_api._img_edit(prompt,img_tmp,mask_tmp,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
+        _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
+        self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',prompt)
+        endTime = time.time()
+        self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
+        self.CURRENT_DIR = _target_dir
+        if os.path.exists(img_tmp):
+            shutil.copy2(img_tmp,f'{_target_dir}')
+        self._fn_img_list(self.CURRENT_DIR,self.IMG_LIST)
+        self._fn_folder_load()
+        self._fn_folder_stats()
+        self._btn_seams.checked = False
+        self._btn_mask.checked = False
+        self._cbx_tile.model.get_item_value_model().set_value(0)
+        if os.path.exists(img_tmp):
+            os.remove(img_tmp)
+        if os.path.exists(mask_tmp):
+            os.remove(mask_tmp)
 
     def _fn_img_variation(self):
-        None
-        # _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
-        # startTime = time.time()
-        # _img_response = self._dalle_api._img_variation(self._image.source_url,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
-        # _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
-        # self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',self._lbl_image_prompt.text)
-        # endTime = time.time()
-        # self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
-        # self.CURRENT_DIR = _target_dir
-        # if os.path.exists(self._image.source_url):
-        #     shutil.copy2(self._image.source_url,f'{_target_dir}1_{os.path.basename(self._image.source_url)}')
-        # self._fn_folder_load()
-        # self._fn_folder_stats()
+        _cbx_item = self._cbx_img_size.model.get_item_value_model().as_int
+        sld_img = self._sld_image.model.as_int-1
+        img_path = self.IMG_LIST[sld_img][2]
+        startTime = time.time()
+        _img_response = self._dalle_api._img_variation(img_path,self._sld_count.model.as_int,self.SIZE_LIST[_cbx_item])
+        _target_dir = self._dalle_api._img_output(_img_response,self._path_img_cache)
+        self._dalle_api._set_json(f'{_target_dir}/{_img_response["created"]}.json','prompt',self._lbl_image_prompt.text)
+        endTime = time.time()
+        self._lbl_process_time_val.text = self._fn_process_time(startTime,endTime)
+        self.CURRENT_DIR = _target_dir
+        if os.path.exists(img_path):
+            shutil.copy2(img_path,f'{_target_dir}1_{os.path.basename(img_path)}')
+        self._fn_img_list(self.CURRENT_DIR,self.IMG_LIST)
+        self._fn_folder_load()
+        self._fn_folder_stats()
 
     def _fn_toggle_seams(self):
         self._btn_seams.checked = not self._btn_seams.checked
@@ -325,18 +383,42 @@ class ExtensionWindow(ui.Window):
     
     def _fn_tiles(self,img:tuple) -> tuple:
         if img:
+            # st = time.time()
             tiles = self._cbx_tile.model.get_item_value_model().as_int+1
             img_w,img_h = img[1]
-            new_img = Image.new('RGBA',(img_w*tiles,img_h*tiles))
-            src_img = Image.fromarray(np.asarray(img[0]))
+            new_img = Image.new('RGBA',(img_w,img_h))
+            input_img = Image.fromarray(np.asarray(img[0]))
+            # Resize the input/source image and tile to improve performance 20x
+            # tile then resize to fit 00:00.28
+            # resize, tile, resize to fit 00:00.014
+            trg_size = (math.ceil(input_img.size[0]/tiles),math.ceil(input_img.size[1]/tiles))
+            sml_img = input_img.resize(trg_size)
+            sml_w,sml_h = sml_img.size
             w,h = new_img.size
-            for i in range(0, w, img_w):
-                for j in range(0, h, img_h):
-                    new_img.paste(src_img, (i,j))
+            for i in range(0, w, sml_w):
+                for j in range(0, h, sml_h):
+                    new_img.paste(sml_img, (i,j))
             new_img = new_img.resize(img[1])
             np_data = np.asarray(new_img).data
+            # et = time.time()
+            # time_tmp = self._fn_process_time(st,et)
+            # carb.log_info(time_tmp)
             return (np_data,new_img.size)
-
+    
+    def _fn_gen_material(self):
+            texture_list = list(Path(self.CURRENT_DIR).glob('*.png'))
+            mtlName = self._fld_mtl_name.model.as_string.replace('-','_')
+            mtlpath = f'/World/Looks/{mtlName}'
+            if self._cbx_material.model.get_item_value_model().as_int == 1 and os.path.exists(self._mdl_file):
+                omni.kit.commands.execute('CreateMdlMaterialPrim',mtl_url=self._mdl_file,mtl_name='BackPlate',mtl_path=mtlpath,select_new_prim=True)
+                mtlstr = "emission_image"
+            else:
+                omni.kit.commands.execute('CreateAndBindMdlMaterialFromLibrary',mdl_name='OmniPBR.mdl',mtl_name='OmniPBR',bind_selected_prims=['/World/Looks'],prim_name=mtlName,select_new_prim=True)
+                mtlstr = "diffuse_texture"
+            mtlselect = omni.usd.get_context().get_selection()
+            mtlprimpath = omni.usd.Selection.get_selected_prim_paths(mtlselect)[0]
+            mtlprim = omni.usd.get_prim_at_path(Sdf.Path(mtlprimpath))
+            omni.usd.create_material_input(mtlprim, mtlstr, Sdf.AssetPath(str(texture_list[self._sld_image.model.as_int-1])), Sdf.ValueTypeNames.Asset)
 #           
 # Folder Functions
 # 
@@ -400,7 +482,7 @@ class ExtensionWindow(ui.Window):
     def _fn_process_time(self,_start=0,_end=0)->str:
         _calc_time = _end-_start
         _minutes,_seconds = divmod(_calc_time,60)
-        return f'{"{:02d}".format(int(_minutes))}:{"{:0.2f}".format(_seconds)}'
+        return f'{"{:02d}".format(int(_minutes))}:{"{:05.2f}".format(_seconds)}'
 
     def get_size_format(self, b, factor=1024, suffix="B"):
         """
@@ -451,29 +533,36 @@ class ExtensionWindow(ui.Window):
             self._sld_image.max = _img_cnt
             self.MLD_IMAGE.set_max(_img_cnt)
     
-    def _fn_file_delete(self,_typeint:1):
-        _all = self._fn_dir_list(self._fld_img_cache.model.as_string)
-        _root = _all[0]
-        _dirs = _all[1]
-        _files = _all[2]
-        _del = 0
-        if len(_dirs) > 0 and len(_files) > 0:
-            if _typeint == 0:
-                for f in _files:
-                    os.remove(f)
-                    _del += 1
-            elif _typeint == 1:
-                for f in _files:
-                    if len(f.split('_')) > 1:
-                        os.remove(f)
-                        _del += 1
-            else:
-                for d in _dirs:
-                    shutil.rmtree(os.path.join(_root,d))
-                _del = len(_dirs) + len(_files)
-            self._fn_folder_stats()
-            print(f'Files Deleted: {_del}')
+    # def _fn_file_delete(self,_typeint:1):
+    #     _all = self._fn_dir_list(self._fld_img_cache.model.as_string)
+    #     _root = _all[0]
+    #     _dirs = _all[1]
+    #     _files = _all[2]
+    #     _del = 0
+    #     if len(_dirs) > 0 and len(_files) > 0:
+    #         if _typeint == 0:
+    #             for f in _files:
+    #                 os.remove(f)
+    #                 _del += 1
+    #         elif _typeint == 1:
+    #             for f in _files:
+    #                 if len(f.split('_')) > 1:
+    #                     os.remove(f)
+    #                     _del += 1
+    #         else:
+    #             for d in _dirs:
+    #                 shutil.rmtree(os.path.join(_root,d))
+    #             _del = len(_dirs) + len(_files)
+    #         self._fn_folder_stats()
+    #         print(f'Files Deleted: {_del}')
 
+    def _fn_prompt_changed(self):
+        if len(self._fld_prompt.model.as_string) > 0:
+            self._btn_inpaint.enabled = True
+            self._btn_inpaint.style = {}
+        else:
+            self._btn_inpaint.enabled = False
+            self._btn_inpaint.style = {'Button':{'background_color':cl("#404040")}}
 # 
 # File Picker Functions
 # 

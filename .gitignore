@@ -7,6 +7,7 @@ api.json
 seamdless.json
 *.afphoto
 **/img_cache
+**/materials
 *.bak
 app
 openai
