@@ -258,13 +258,13 @@ class ExtensionWindow(ui.Window):
         self._provider.set_data_array(img[0],img[1])
         fld_mdl = self._fld_mtl_name.model
         if len(self.IMG_LIST) != 0:
-            fld_str = fld_mdl.as_string
-            fld_arr = [i for i in self.IMG_LIST if Path(os.path.basename(i[2])).stem.replace('-','_') == fld_str]
-            if len(fld_arr) > 0 or len(fld_str) == 0:
-                img_nm = os.path.basename(self.IMG_LIST[_val-1][2])
-                img_nm = Path(img_nm).stem.replace('-','_')
-                fld_mdl.set_value(img_nm)
-                fld_str = fld_mdl.as_string           
+            # fld_str = fld_mdl.as_string
+            # fld_arr = [i for i in self.IMG_LIST if Path(os.path.basename(i[2])).stem.replace('-','_') == fld_str]
+            # if len(fld_arr) > 0 or len(fld_str) == 0:
+            img_nm = os.path.basename(self.IMG_LIST[_val-1][2])
+            img_nm = Path(img_nm).stem.replace('-','_')
+            fld_mdl.set_value(img_nm)
+            # fld_str = fld_mdl.as_string 
         else:
             fld_mdl.set_value('')
 
